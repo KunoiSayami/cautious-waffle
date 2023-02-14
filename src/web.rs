@@ -14,8 +14,9 @@ pub mod v1 {
     #[derive(Clone, Debug)]
     pub struct RealIP(String);
 
-    const X_REAL_IP: &str = "X-REAL-IP";
-    static X_REAL_IP_NAME: Lazy<HeaderName> = Lazy::new(|| HeaderName::from_static(X_REAL_IP));
+    const X_REAL_IP: &'static str = "X-Real-IP";
+    static X_REAL_IP_NAME: Lazy<HeaderName> =
+        Lazy::new(|| HeaderName::try_from(X_REAL_IP).unwrap());
 
     impl Header for RealIP {
         fn name() -> &'static HeaderName {

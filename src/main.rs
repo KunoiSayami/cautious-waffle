@@ -29,7 +29,7 @@ async fn async_main(config_location: String) -> anyhow::Result<()> {
     let bind = config.get_bind();
     debug!("Server bind to {}", &bind);
 
-    let request = ApiRequest::from(config).update_zone_info().await?;
+    let request = ApiRequest::from(config);
 
     let router = Router::new()
         .route("/:sub_id", axum::routing::get(get))

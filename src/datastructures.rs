@@ -3,6 +3,24 @@ mod config {
     use std::fmt::Formatter;
 
     #[derive(Clone, Debug, Deserialize)]
+    pub struct ZoneMapper {
+        domain: String,
+        zone: String,
+    }
+
+    impl ZoneMapper {
+        pub fn domain(&self) -> &str {
+            &self.domain
+        }
+        pub fn zone(&self) -> &str {
+            &self.zone
+        }
+        pub fn new(domain: String, zone: String) -> Self {
+            Self { domain, zone }
+        }
+    }
+
+    #[derive(Clone, Debug, Deserialize)]
     pub struct ClientMapper {
         uuid: String,
         target: Vec<String>,
@@ -20,13 +38,14 @@ mod config {
     #[derive(Clone, Debug, Deserialize)]
     pub struct Config {
         server: Server,
-        clients: Vec<ClientMapper>,
+        client: Vec<ClientMapper>,
+        zones: Vec<ZoneMapper>,
         token: String,
     }
 
     impl Config {
-        pub fn clients(self) -> Vec<ClientMapper> {
-            self.clients
+        pub fn clients(&self) -> &Vec<ClientMapper> {
+            &self.client
         }
         pub fn token(&self) -> &str {
             &self.token
@@ -34,6 +53,9 @@ mod config {
 
         pub fn get_bind(&self) -> String {
             self.server.to_string()
+        }
+        pub fn zones(&self) -> &Vec<ZoneMapper> {
+            &self.zones
         }
     }
 
@@ -51,3 +73,4 @@ mod config {
 }
 
 pub use config::Config;
+pub use config::ZoneMapper;
