@@ -12,7 +12,7 @@ pub mod v1 {
     use std::sync::Arc;
 
     #[derive(Clone, Debug)]
-    pub struct RealIP(String);
+    pub struct RealIP(Option<String>);
 
     const X_REAL_IP: &'static str = "X-Real-IP";
     static X_REAL_IP_NAME: Lazy<HeaderName> =
@@ -28,21 +28,33 @@ pub mod v1 {
             Self: Sized,
             I: Iterator<Item = &'i HeaderValue>,
         {
-            let value = values.next().ok_or_else(Error::invalid)?;
-            let s = value.to_str().map_err(|_| Error::invalid())?;
-            if s.parse::<Ipv4Addr>().is_err() {
-                Err(Error::invalid())
-            } else {
-                Ok(RealIP(s.to_string()))
-            }
+            Ok(RealIP(
+                values
+                    .next()
+                    .map(|v| {
+                        v.to_str()
+                            .map(|s| {
+                                if s.parse::<Ipv4Addr>().is_err() {
+                                    None
+                                } else {
+                                    Some(s.to_string())
+                                }
+                            })
+                            .ok()
+                    })
+                    .flatten()
+                    .flatten(),
+            ))
         }
 
         fn encode<E: Extend<HeaderValue>>(&self, values: &mut E) {
-            let value = HeaderValue::from_str(self.0.as_str())
-                .map_err(|e| error!("Encode error: {:?}", e))
-                .ok();
-            if let Some(v) = value {
-                values.extend(std::iter::once(v));
+            if let Some(ref s) = self.0 {
+                let value = HeaderValue::from_str(s.as_str())
+                    .map_err(|e| error!("Encode error: {:?}", e))
+                    .ok();
+                if let Some(v) = value {
+                    values.extend(std::iter::once(v));
+                }
             }
         }
     }
@@ -52,7 +64,11 @@ pub mod v1 {
         TypedHeader(header): TypedHeader<RealIP>,
         State(api): State<Arc<ApiRequest>>,
     ) -> impl IntoResponse {
-        let ret = api.request(&uuid, header.0).await;
+        let ret = if let Some(ip) = header.0 {
+            api.request(&uuid, ip).await
+        } else {
+            return (StatusCode::FORBIDDEN, "403 Forbidden");
+        };
         match ret {
             Ok(ret) => {
                 if ret {

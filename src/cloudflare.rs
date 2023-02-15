@@ -23,7 +23,7 @@ mod api {
     use super::{ApiError, DEFAULT_TIMEOUT};
     use crate::datastructures::{Config, ZoneMapper};
     use anyhow::anyhow;
-    use log::{debug, error, warn};
+    use log::{error, warn};
     use serde_derive::{Deserialize, Serialize};
     use std::collections::HashMap;
     use std::time::Duration;
