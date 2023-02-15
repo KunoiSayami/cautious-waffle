@@ -79,7 +79,8 @@ fn main() -> anyhow::Result<()> {
     binding
         .filter_module("rustls", LevelFilter::Warn)
         .filter_module("reqwest", LevelFilter::Warn)
-        .filter_module("h2", LevelFilter::Warn);
+        .filter_module("h2", LevelFilter::Warn)
+        .filter_module("hyper::proto::h1", LevelFilter::Warn);
     if matches.get_flag("systemd") {
         binding.format(|buf, record| writeln!(buf, "[{}] {}", record.level(), record.args()));
     }

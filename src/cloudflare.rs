@@ -23,7 +23,7 @@ mod api {
     use super::{ApiError, DEFAULT_TIMEOUT};
     use crate::datastructures::{Config, ZoneMapper};
     use anyhow::anyhow;
-    use log::{error, warn};
+    use log::{error, info, warn};
     use serde_derive::{Deserialize, Serialize};
     use std::collections::HashMap;
     use std::time::Duration;
@@ -211,6 +211,7 @@ mod api {
                 warn!("Pending array is empty");
                 return Err(ApiError::bad_request());
             }
+            let mut updated = false;
 
             for zone in zones {
                 if let Ok(mut record) =
@@ -219,10 +220,17 @@ mod api {
                         .map_err(|e| error!("{}", e))
                 {
                     if !record.content().eq(&new_ip) {
-                        record.set_content(new_ip.to_string());
+                        record.set_content(new_ip.clone());
                         record
                             .update_ns_record(&self.client)
                             .await
+                            .map(|ret| {
+                                if ret && !updated {
+                                    updated = true;
+                                    info!("Update {} IP to {}", uuid, new_ip);
+                                }
+                                ret
+                            })
                             .map_err(|e| {
                                 error!("Processing: {} {} {}", zone.domain(), zone.zone(), e)
                             })
@@ -231,7 +239,7 @@ mod api {
                 };
             }
 
-            Ok(false)
+            Ok(updated)
         }
     }
 }
