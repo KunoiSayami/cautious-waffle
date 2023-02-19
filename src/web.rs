@@ -9,6 +9,7 @@ pub mod v1 {
     use log::{error, info};
     use once_cell::sync::Lazy;
     use std::net::Ipv4Addr;
+    use std::str::FromStr;
     use std::sync::Arc;
 
     #[derive(Clone, Debug)]
@@ -60,21 +61,25 @@ pub mod v1 {
     }
 
     pub async fn get(
-        Path(uuid): Path<String>,
+        Path(id): Path<String>,
         TypedHeader(header): TypedHeader<RealIP>,
         State(api): State<Arc<ApiRequest>>,
     ) -> impl IntoResponse {
+        if uuid::Uuid::from_str(&id).is_err() {
+            return (StatusCode::BAD_REQUEST, "400 Bad request\n");
+        }
+
         let ret = if let Some(ip) = header.0 {
-            api.request(&uuid, ip).await
+            api.request(&id, ip).await
         } else {
-            return (StatusCode::FORBIDDEN, "403 Forbidden");
+            return (StatusCode::FORBIDDEN, "403 Forbidden\n");
         };
         match ret {
             Ok(ret) => {
                 if ret {
-                    info!("{} IP updated", uuid);
+                    info!("{} IP updated", id);
                 }
-                (StatusCode::OK, "200 OK")
+                (StatusCode::OK, "200 OK\n")
             }
             Err(e) => e.into_response(),
         }

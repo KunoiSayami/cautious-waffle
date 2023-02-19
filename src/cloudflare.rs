@@ -23,7 +23,7 @@ mod api {
     use super::{ApiError, DEFAULT_TIMEOUT};
     use crate::datastructures::{Config, ZoneMapper};
     use anyhow::anyhow;
-    use log::{error, info, warn};
+    use log::{error, info};
     use serde_derive::{Deserialize, Serialize};
     use std::collections::HashMap;
     use std::time::Duration;
@@ -165,8 +165,10 @@ mod api {
         client: reqwest::Client,
     }
 
-    impl From<Config> for ApiRequest {
-        fn from(value: Config) -> Self {
+    impl TryFrom<Config> for ApiRequest {
+        type Error = anyhow::Error;
+
+        fn try_from(value: Config) -> Result<Self, Self::Error> {
             let client = reqwest::ClientBuilder::new()
                 .default_headers({
                     let mut m = reqwest::header::HeaderMap::new();
@@ -196,10 +198,13 @@ mod api {
                         }
                     }
                 }
+                if zones.is_empty() {
+                    return Err(anyhow!("Zone is empty"));
+                }
                 m.insert(element.uuid().to_string(), zones.clone());
                 zones.clear();
             }
-            Self { mapper: m, client }
+            Ok(Self { mapper: m, client })
         }
     }
 
@@ -207,10 +212,6 @@ mod api {
         pub async fn request(&self, uuid: &String, new_ip: String) -> Result<bool, ApiError> {
             let zones = self.mapper.get(uuid).ok_or_else(ApiError::forbidden)?;
 
-            if zones.is_empty() {
-                warn!("Pending array is empty");
-                return Err(ApiError::bad_request());
-            }
             let mut updated = false;
 
             for zone in zones {
@@ -251,7 +252,6 @@ mod api_error {
     #[derive(Debug)]
     pub enum ApiError {
         Forbidden,
-        BadRequest,
         Other(anyhow::Error),
     }
 
@@ -259,21 +259,17 @@ mod api_error {
         pub fn forbidden() -> Self {
             Self::Forbidden
         }
-        pub fn bad_request() -> Self {
-            Self::BadRequest
-        }
 
         pub fn into_response(self) -> (StatusCode, &'static str) {
             match self {
-                ApiError::Forbidden => (StatusCode::FORBIDDEN, "403 Forbidden"),
+                ApiError::Forbidden => (StatusCode::FORBIDDEN, "403 Forbidden\n"),
                 ApiError::Other(e) => {
                     error!("{}", e);
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        "500 Internal server error",
+                        "500 Internal server error\n",
                     )
                 }
-                ApiError::BadRequest => (StatusCode::BAD_REQUEST, "400 Bad request"),
             }
         }
     }
