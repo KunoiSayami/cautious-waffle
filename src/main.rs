@@ -1,12 +1,15 @@
 use crate::cloudflare::ApiRequest;
 use crate::datastructures::Config;
+use crate::web::current::post;
 use crate::web::get;
 use anyhow::anyhow;
 use axum::http::StatusCode;
 use axum::{Json, Router};
 use clap::{arg, command};
 use log::{debug, info, warn, LevelFilter};
+use once_cell::sync::OnceCell;
 use serde_json::json;
+use std::hint::unreachable_unchecked;
 use std::io::Write;
 use std::sync::Arc;
 use tower::ServiceBuilder;
@@ -17,6 +20,7 @@ mod datastructures;
 mod web;
 
 const DEFAULT_CONFIG_LOCATION: &str = "config.toml";
+static IP_COLUMN: OnceCell<String> = OnceCell::new();
 
 async fn async_main(config_location: String) -> anyhow::Result<()> {
     let config: Config = toml::from_str(
@@ -26,13 +30,21 @@ async fn async_main(config_location: String) -> anyhow::Result<()> {
     )
     .map_err(|e| anyhow!("Unable serialize configure toml: {:?}", e))?;
 
+    if let Some(ref column) = config.column_ip() {
+        IP_COLUMN.set(column.clone()).unwrap();
+    }
+
     let bind = config.get_bind();
     debug!("Server bind to {}", &bind);
 
     let request = ApiRequest::try_from(config)?;
 
+    if request.is_relay() {
+        debug!("Server is running on relay mode");
+    }
+
     let router = Router::new()
-        .route("/:sub_id", axum::routing::get(get))
+        .route("/:sub_id", axum::routing::get(get).post(post))
         .route(
             "/",
             axum::routing::get(|| async {
@@ -59,6 +71,7 @@ async fn async_main(config_location: String) -> anyhow::Result<()> {
             warn!("Force to exit!");
             std::process::exit(137)
         } => {
+            unsafe { unreachable_unchecked() }
         },
         _ = server => {
         }

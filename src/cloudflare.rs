@@ -18,10 +18,12 @@
  ** along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 const DEFAULT_TIMEOUT: u64 = 5;
+const RELAY_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), " ", env!("CARGO_PKG_VERSION"));
 mod api {
 
     use super::{ApiError, DEFAULT_TIMEOUT};
-    use crate::datastructures::{Config, ZoneMapper};
+    use crate::cloudflare::RELAY_USER_AGENT;
+    use crate::datastructures::{Config, PostData, Relay, RelayConfig, ZoneMapper};
     use anyhow::anyhow;
     use log::{error, info};
     use serde_derive::{Deserialize, Serialize};
@@ -162,13 +164,43 @@ mod api {
     #[derive(Clone, Debug)]
     pub struct ApiRequest {
         mapper: HashMap<String, Vec<ZoneMapper>>,
+        relay: Relay,
         client: reqwest::Client,
+    }
+
+    impl TryFrom<RelayConfig> for ApiRequest {
+        type Error = anyhow::Error;
+
+        fn try_from(value: RelayConfig) -> Result<Self, Self::Error> {
+            let client = reqwest::ClientBuilder::new()
+                .timeout(Duration::from_secs(DEFAULT_TIMEOUT))
+                .user_agent(RELAY_USER_AGENT);
+            let client = if let Some(proxy) = value.proxy() {
+                client.proxy(
+                    reqwest::Proxy::all(proxy)
+                        .map_err(|e| anyhow!("Parse proxy scheme error: {:?}", e))?,
+                )
+            } else {
+                client
+            }
+            .build()
+            .unwrap();
+            let relay = Relay::try_from(value)?;
+            Ok(Self {
+                mapper: HashMap::new(),
+                relay,
+                client,
+            })
+        }
     }
 
     impl TryFrom<Config> for ApiRequest {
         type Error = anyhow::Error;
 
         fn try_from(value: Config) -> Result<Self, Self::Error> {
+            if value.is_relay_mode() {
+                return Self::try_from(value.relay());
+            }
             let client = reqwest::ClientBuilder::new()
                 .default_headers({
                     let mut m = reqwest::header::HeaderMap::new();
@@ -204,12 +236,48 @@ mod api {
                 m.insert(element.uuid().to_string(), zones.clone());
                 zones.clear();
             }
-            Ok(Self { mapper: m, client })
+            Ok(Self {
+                mapper: m,
+                relay: Default::default(),
+                client,
+            })
         }
     }
 
     impl ApiRequest {
+        pub async fn process_relay(&self, uuid: &String, new_ip: String) -> Result<bool, ApiError> {
+            let data = PostData::new(new_ip);
+            let mut update = false;
+            for upstream in self.relay.target() {
+                if let Ok(status) = self
+                    .client
+                    .post(format!("{}{}", upstream, uuid))
+                    .json(&data)
+                    .send()
+                    .await
+                    .map(|ret| ret.status())
+                    .map_err(|e| error!("{}", e))
+                {
+                    if status.is_success() {
+                        update = true;
+                        break;
+                    }
+                }
+            }
+            Ok(update)
+        }
+
         pub async fn request(&self, uuid: &String, new_ip: String) -> Result<bool, ApiError> {
+            if self.relay.enabled() {
+                let uuid = self
+                    .relay
+                    .clients()
+                    .get(uuid)
+                    .ok_or_else(ApiError::forbidden)?;
+
+                return self.process_relay(&uuid, new_ip).await;
+            }
+
             let zones = self.mapper.get(uuid).ok_or_else(ApiError::forbidden)?;
 
             let mut updated = false;
@@ -241,6 +309,10 @@ mod api {
             }
 
             Ok(updated)
+        }
+
+        pub fn is_relay(&self) -> bool {
+            self.relay.enabled()
         }
     }
 }

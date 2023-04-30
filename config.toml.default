@@ -1,0 +1,30 @@
+token = "CF_TOKEN"
+
+[server]
+host = "127.0.0.1"
+port = 21336
+
+[[client]]
+uuid = "db5770ec-750b-4dd9-9fe2-2bf374b0ab50"
+target = ["test.example.com"]
+
+
+[[client]]
+uuid = "2e33d095-e242-49c5-8cd8-076e0f0eb04b"
+target = ["test.example.moe"]
+
+[[zones]]
+domain = "example.moe"
+zone = "31dc441464574926bafc15a73212db30"
+
+
+[[zones]]
+domain = "example.com"
+zone = "fbdda469ff654a13826ed0222cc30aba"
+
+[relay]
+enabled = false
+target = ["https://example.com/"]
+
+[[relay.clients]]
+uuid = "7e42b2ee-38bc-4f49-9ae0-ed527952ac5c"

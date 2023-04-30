@@ -1,85 +1,78 @@
 pub mod v1 {
     use crate::cloudflare::ApiRequest;
+    use crate::datastructures::PostData;
+    use crate::IP_COLUMN;
     use axum::extract::{Path, State};
-    use axum::http::header::HeaderName;
-    use axum::http::{HeaderValue, StatusCode};
+    use axum::http::StatusCode;
     use axum::response::IntoResponse;
-    use axum::TypedHeader;
-    use headers::{Error, Header};
-    use log::{error, info};
-    use once_cell::sync::Lazy;
-    use std::net::Ipv4Addr;
+    use axum::Json;
+    use headers::HeaderMap;
+    use log::info;
     use std::str::FromStr;
     use std::sync::Arc;
 
-    #[derive(Clone, Debug)]
-    pub struct RealIP(Option<String>);
-
     const X_REAL_IP: &'static str = "X-Real-IP";
-    static X_REAL_IP_NAME: Lazy<HeaderName> =
-        Lazy::new(|| HeaderName::try_from(X_REAL_IP).unwrap());
 
-    impl Header for RealIP {
-        fn name() -> &'static HeaderName {
-            &*X_REAL_IP_NAME
-        }
-
-        fn decode<'i, I>(values: &mut I) -> Result<Self, Error>
-        where
-            Self: Sized,
-            I: Iterator<Item = &'i HeaderValue>,
-        {
-            Ok(RealIP(
-                values
-                    .next()
-                    .map(|v| {
-                        v.to_str()
-                            .map(|s| {
-                                if s.parse::<Ipv4Addr>().is_err() {
-                                    None
-                                } else {
-                                    Some(s.to_string())
-                                }
-                            })
-                            .ok()
-                    })
-                    .flatten()
-                    .flatten(),
-            ))
-        }
-
-        fn encode<E: Extend<HeaderValue>>(&self, values: &mut E) {
-            if let Some(ref s) = self.0 {
-                let value = HeaderValue::from_str(s.as_str())
-                    .map_err(|e| error!("Encode error: {:?}", e))
-                    .ok();
-                if let Some(v) = value {
-                    values.extend(std::iter::once(v));
-                }
-            }
-        }
-    }
+    const BAD_REQUEST: (StatusCode, &str) = (StatusCode::BAD_REQUEST, "400 Bad request\n");
+    const FORBIDDEN: (StatusCode, &str) = (StatusCode::FORBIDDEN, "403 Forbidden\n");
+    const OK: (StatusCode, &str) = (StatusCode::OK, "200 OK\n");
 
     pub async fn get(
         Path(id): Path<String>,
-        TypedHeader(header): TypedHeader<RealIP>,
+        headers: HeaderMap,
         State(api): State<Arc<ApiRequest>>,
     ) -> impl IntoResponse {
+        staff(id, None, api, headers).await
+    }
+
+    pub async fn post(
+        Path(id): Path<String>,
+        State(api): State<Arc<ApiRequest>>,
+        headers: HeaderMap,
+        Json(data): Json<PostData>,
+    ) -> impl IntoResponse {
+        staff(id, Some(data), api, headers).await
+    }
+
+    async fn staff(
+        id: String,
+        data: Option<PostData>,
+        api: Arc<ApiRequest>,
+        headers: HeaderMap,
+    ) -> impl IntoResponse {
         if uuid::Uuid::from_str(&id).is_err() {
-            return (StatusCode::BAD_REQUEST, "400 Bad request\n");
+            return BAD_REQUEST;
         }
 
-        let ret = if let Some(ip) = header.0 {
-            api.request(&id, ip).await
+        let header_ip = if let Some(ip) = headers
+            .get(IP_COLUMN.get_or_init(|| X_REAL_IP.to_string()))
+            .map(|v| v.to_str().unwrap_or_default().to_string())
+        {
+            ip
         } else {
-            return (StatusCode::FORBIDDEN, "403 Forbidden\n");
+            String::new()
         };
+
+        let ret = match data {
+            None => {
+                if header_ip.is_empty() {
+                    return FORBIDDEN;
+                }
+                api.request(&id, header_ip.clone()).await
+            }
+            Some(data) => api.request(&id, data.ip().to_string()).await,
+        };
+
         match ret {
             Ok(ret) => {
                 if ret {
-                    info!("{} IP updated", id);
+                    if header_ip.is_empty() {
+                        info!("{} IP updated", id);
+                    } else {
+                        info!("{} IP updated (via {})", id, header_ip);
+                    }
                 }
-                (StatusCode::OK, "200 OK\n")
+                OK
             }
             Err(e) => e.into_response(),
         }
