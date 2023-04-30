@@ -262,6 +262,7 @@ mod api {
                         update = true;
                         break;
                     }
+                    error!("Post to {} unsuccessful: {:?}", upstream, status)
                 }
             }
             Ok(update)

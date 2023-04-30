@@ -197,7 +197,7 @@ mod relay {
                 .unwrap_or_default();
             let mut warning_sent = false;
 
-            if disable_warning {
+            if !disable_warning {
                 for target in target {
                     if !['=', '/', '?'].iter().any(|x| target.ends_with(*x)) {
                         warn!("{:?} is not ends with `=`, `/` or `?`", target);
@@ -206,7 +206,7 @@ mod relay {
                 }
                 if warning_sent {
                     warn!(
-                        "You can disable this warning by set: {} environment variable to 1",
+                        "You can disable this warning by set `{}` environment variable to `1`",
                         DISABLE_URL_WARNING
                     );
                 }

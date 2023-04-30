@@ -15,6 +15,10 @@ pub mod v1 {
 
     const BAD_REQUEST: (StatusCode, &str) = (StatusCode::BAD_REQUEST, "400 Bad request\n");
     const FORBIDDEN: (StatusCode, &str) = (StatusCode::FORBIDDEN, "403 Forbidden\n");
+    const SERVICE_UNAVAILABLE: (StatusCode, &str) = (
+        StatusCode::SERVICE_UNAVAILABLE,
+        "500 Services Unavailable\n",
+    );
     const OK: (StatusCode, &str) = (StatusCode::OK, "200 OK\n");
 
     pub async fn get(
@@ -72,7 +76,11 @@ pub mod v1 {
                         info!("{} IP updated (via {})", id, header_ip);
                     }
                 }
-                OK
+                if !(api.is_relay() && !ret) {
+                    OK
+                } else {
+                    SERVICE_UNAVAILABLE
+                }
             }
             Err(e) => e.into_response(),
         }
