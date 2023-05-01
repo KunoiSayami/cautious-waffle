@@ -1,7 +1,6 @@
 pub mod v1 {
     use crate::cloudflare::ApiRequest;
     use crate::datastructures::PostData;
-    use crate::IP_COLUMN;
     use axum::extract::{Path, State};
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
@@ -10,8 +9,7 @@ pub mod v1 {
     use log::info;
     use std::str::FromStr;
     use std::sync::Arc;
-
-    const X_REAL_IP: &'static str = "X-Real-IP";
+    use tokio::sync::RwLock;
 
     const BAD_REQUEST: (StatusCode, &str) = (StatusCode::BAD_REQUEST, "400 Bad request\n");
     const FORBIDDEN: (StatusCode, &str) = (StatusCode::FORBIDDEN, "403 Forbidden\n");
@@ -24,14 +22,14 @@ pub mod v1 {
     pub async fn get(
         Path(id): Path<String>,
         headers: HeaderMap,
-        State(api): State<Arc<ApiRequest>>,
+        State(api): State<Arc<RwLock<ApiRequest>>>,
     ) -> impl IntoResponse {
         staff(id, None, api, headers).await
     }
 
     pub async fn post(
         Path(id): Path<String>,
-        State(api): State<Arc<ApiRequest>>,
+        State(api): State<Arc<RwLock<ApiRequest>>>,
         headers: HeaderMap,
         Json(data): Json<PostData>,
     ) -> impl IntoResponse {
@@ -41,15 +39,16 @@ pub mod v1 {
     async fn staff(
         id: String,
         data: Option<PostData>,
-        api: Arc<ApiRequest>,
+        api: Arc<RwLock<ApiRequest>>,
         headers: HeaderMap,
     ) -> impl IntoResponse {
         if uuid::Uuid::from_str(&id).is_err() {
             return BAD_REQUEST;
         }
+        let api = api.read().await;
 
         let header_ip = if let Some(ip) = headers
-            .get(IP_COLUMN.get_or_init(|| X_REAL_IP.to_string()))
+            .get(api.column())
             .map(|v| v.to_str().unwrap_or_default().to_string())
         {
             ip

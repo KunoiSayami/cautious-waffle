@@ -1,4 +1,5 @@
 mod config {
+    use anyhow::anyhow;
     use serde_derive::Deserialize;
     use std::fmt::Formatter;
 
@@ -115,6 +116,16 @@ mod config {
         }
         pub fn column_ip(&self) -> &Option<String> {
             &self.column_ip
+        }
+
+        pub async fn try_from_file(location: &str) -> anyhow::Result<Self> {
+            let config = toml::from_str(
+                &tokio::fs::read_to_string(&location)
+                    .await
+                    .map_err(|e| anyhow!("Unable read {:?}: {:?}", &location, e))?,
+            )
+            .map_err(|e| anyhow!("Unable serialize configure toml: {:?}", e))?;
+            Ok(config)
         }
     }
 

@@ -32,6 +32,8 @@ mod api {
 
     const CLOUDFLARE_API_PREFIX: &str = "https://api.cloudflare.com/client/v4";
 
+    pub const DEFAULT_COLUMN: &'static str = "X-Real-IP";
+
     #[derive(Clone, Debug, Deserialize)]
     pub struct DNSRecord {
         id: String,
@@ -166,6 +168,7 @@ mod api {
         mapper: HashMap<String, Vec<ZoneMapper>>,
         relay: Relay,
         client: reqwest::Client,
+        column: String,
     }
 
     impl TryFrom<RelayConfig> for ApiRequest {
@@ -190,6 +193,7 @@ mod api {
                 mapper: HashMap::new(),
                 relay,
                 client,
+                column: "".to_string(),
             })
         }
     }
@@ -198,8 +202,12 @@ mod api {
         type Error = anyhow::Error;
 
         fn try_from(value: Config) -> Result<Self, Self::Error> {
+            let ip_column = value
+                .column_ip()
+                .clone()
+                .unwrap_or_else(|| DEFAULT_COLUMN.to_string());
             if value.is_relay_mode() {
-                return Self::try_from(value.relay());
+                return Self::try_from(value.relay()).map(|x| x.set_column(ip_column));
             }
             let client = reqwest::ClientBuilder::new()
                 .default_headers({
@@ -240,6 +248,7 @@ mod api {
                 mapper: m,
                 relay: Default::default(),
                 client,
+                column: ip_column,
             })
         }
     }
@@ -314,6 +323,29 @@ mod api {
 
         pub fn is_relay(&self) -> bool {
             self.relay.enabled()
+        }
+
+        pub fn info(&self) -> String {
+            format!(
+                "relay mode: {}, {}",
+                self.is_relay(),
+                if self.is_relay() {
+                    format!(
+                        "targets: {}, clients: {}",
+                        self.relay.target().len(),
+                        self.relay.clients().len()
+                    )
+                } else {
+                    format!("clients: {}", self.mapper.len())
+                }
+            )
+        }
+        fn set_column(mut self, column: String) -> Self {
+            self.column = column;
+            self
+        }
+        pub fn column(&self) -> &str {
+            &self.column
         }
     }
 }
