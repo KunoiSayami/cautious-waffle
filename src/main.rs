@@ -74,7 +74,7 @@ async fn async_main(config_location: String) -> anyhow::Result<()> {
 
     tokio::task::spawn_blocking(|| file_watcher.stop())
         .await
-        .map(|e| {
+        .map_err(|e| {
             error!(
                 "[Can be safely ignored] Unable to spawn stop file watcher thread {:?}",
                 e
