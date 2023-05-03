@@ -1,8 +1,7 @@
 use crate::cloudflare::ApiRequest;
 use crate::datastructures::Config;
 use crate::file_watcher::FileWatchDog;
-use crate::web::current::post;
-use crate::web::get;
+use crate::web::{get, post};
 use axum::http::StatusCode;
 use axum::{Json, Router};
 use clap::{arg, command};
@@ -22,7 +21,7 @@ mod web;
 
 const DEFAULT_CONFIG_LOCATION: &str = "config.toml";
 
-async fn async_main(config_location: String) -> anyhow::Result<()> {
+async fn async_main(config_location: String, file_watchdog: bool) -> anyhow::Result<()> {
     let config = Config::try_from_file(&config_location).await?;
 
     let bind = config.get_bind();
@@ -55,7 +54,11 @@ async fn async_main(config_location: String) -> anyhow::Result<()> {
             .serve(router.into_make_service()),
     );
 
-    let file_watcher = FileWatchDog::start(config_location, request);
+    let file_watcher_handler = if file_watchdog {
+        Some(FileWatchDog::start(config_location, request))
+    } else {
+        None
+    };
 
     tokio::select! {
         _ = async {
@@ -68,19 +71,22 @@ async fn async_main(config_location: String) -> anyhow::Result<()> {
         } => {
             unsafe { unreachable_unchecked() }
         },
-        _ = server => {
+        ret = server => {
+            ret??;
         }
     }
 
-    tokio::task::spawn_blocking(|| file_watcher.stop())
-        .await
-        .map_err(|e| {
-            error!(
-                "[Can be safely ignored] Unable to spawn stop file watcher thread {:?}",
-                e
-            )
-        })
-        .ok();
+    if file_watchdog {
+        tokio::task::spawn_blocking(|| file_watcher_handler.unwrap().stop())
+            .await
+            .map_err(|e| {
+                error!(
+                    "[Can be safely ignored] Unable to spawn stop file watcher thread {:?}",
+                    e
+                )
+            })
+            .ok();
+    }
 
     Ok(())
 }
@@ -90,6 +96,7 @@ fn main() -> anyhow::Result<()> {
         .args(&[
             arg!(--config [configure_file] "Specify configure location (Default: ./config.yaml)"),
             arg!(--systemd "Disable log output in systemd"),
+            arg!(--"disable-watcher" "Disable configuration file watcher"),
         ])
         .get_matches();
 
@@ -113,5 +120,6 @@ fn main() -> anyhow::Result<()> {
                 .get_one("config")
                 .map(|s: &String| s.to_string())
                 .unwrap_or_else(|| DEFAULT_CONFIG_LOCATION.to_string()),
+            !matches.get_flag("disable-watcher"),
         ))
 }

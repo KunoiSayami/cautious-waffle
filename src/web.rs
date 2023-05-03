@@ -86,5 +86,5 @@ pub mod v1 {
     }
 }
 
-pub use current::get;
+pub use current::{get, post};
 pub use v1 as current;
