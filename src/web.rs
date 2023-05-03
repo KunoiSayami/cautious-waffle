@@ -63,16 +63,16 @@ pub mod v1 {
                 }
                 api.request(&id, header_ip.clone()).await
             }
-            Some(data) => api.request(&id, data.ip().to_string()).await,
+            Some(ref data) => api.request(&id, data.ip().to_string()).await,
         };
 
         match ret {
             Ok(ret) => {
                 if ret {
-                    if header_ip.is_empty() {
-                        info!("{} IP updated", id);
-                    } else {
+                    if !header_ip.is_empty() && data.is_none() {
                         info!("{} IP updated (via {})", id, header_ip);
+                    } else {
+                        info!("{} IP updated", id);
                     }
                 }
                 if !(api.is_relay() && !ret) {
