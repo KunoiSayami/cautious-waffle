@@ -94,7 +94,8 @@ async fn async_main(config_location: String, file_watchdog: bool) -> anyhow::Res
 fn main() -> anyhow::Result<()> {
     let matches = command!()
         .args(&[
-            arg!(--config [configure_file] "Specify configure location (Default: ./config.yaml)"),
+            arg!(--config [configure_file] "Specify configure location")
+                .default_value(DEFAULT_CONFIG_LOCATION),
             arg!(--systemd "Disable log output in systemd"),
             arg!(--"disable-watcher" "Disable configuration file watcher"),
         ])
@@ -119,7 +120,7 @@ fn main() -> anyhow::Result<()> {
             matches
                 .get_one("config")
                 .map(|s: &String| s.to_string())
-                .unwrap_or_else(|| DEFAULT_CONFIG_LOCATION.to_string()),
+                .unwrap(),
             !matches.get_flag("disable-watcher"),
         ))
 }

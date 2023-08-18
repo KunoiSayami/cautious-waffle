@@ -27,6 +27,8 @@ pub mod v1 {
         staff(id, None, api, headers).await
     }
 
+    // To use this post function
+    // Post data { "ip": "114.51.4.19" } to server
     pub async fn post(
         Path(id): Path<String>,
         State(api): State<Arc<RwLock<ApiRequest>>>,
@@ -42,11 +44,15 @@ pub mod v1 {
         api: Arc<RwLock<ApiRequest>>,
         headers: HeaderMap,
     ) -> impl IntoResponse {
+        // Check uuid validity
         if uuid::Uuid::from_str(&id).is_err() {
             return BAD_REQUEST;
         }
+
+        // Configure file
         let api = api.read().await;
 
+        // Get header IP (if empty maybe that's post)
         let header_ip = if let Some(ip) = headers
             .get(api.column())
             .map(|v| v.to_str().unwrap_or_default().to_string())
@@ -56,6 +62,7 @@ pub mod v1 {
             String::new()
         };
 
+        // Check is ip from post
         let ret = match data {
             None => {
                 if header_ip.is_empty() {
@@ -75,6 +82,7 @@ pub mod v1 {
                         info!("{} IP updated", id);
                     }
                 }
+                // Check is relay and is success
                 if !(api.is_relay() && !ret) {
                     OK
                 } else {
