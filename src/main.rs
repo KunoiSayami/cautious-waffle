@@ -25,6 +25,7 @@ async fn async_main(config_location: String, file_watchdog: bool) -> anyhow::Res
     let config = Config::try_from_file(&config_location).await?;
 
     let bind = config.get_bind();
+    info!("Version: {}", env!("CARGO_PKG_VERSION"));
     debug!("Server bind to {}", &bind);
 
     let request = ApiRequest::try_from(config)?;

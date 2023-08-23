@@ -82,10 +82,15 @@ mod config {
     #[derive(Clone, Debug, Deserialize)]
     pub struct Config {
         server: Server,
+        #[serde(default)]
         client: Vec<ClientMapper>,
+        // Can be empty if relay
+        #[serde(default)]
         zones: Vec<ZoneMapper>,
         #[serde(default)]
         relay: Relay,
+        // Can be option if relay
+        #[serde(default)]
         token: String,
         column_ip: Option<String>,
     }
@@ -119,13 +124,26 @@ mod config {
         }
 
         pub async fn try_from_file(location: &str) -> anyhow::Result<Self> {
-            let config = toml::from_str(
+            let config: Self = toml::from_str(
                 &tokio::fs::read_to_string(&location)
                     .await
                     .map_err(|e| anyhow!("Unable read {:?}: {:?}", &location, e))?,
             )
             .map_err(|e| anyhow!("Unable serialize configure toml: {:?}", e))?;
+
+            if !config.check_config() {
+                return Err(anyhow!(
+                    "Config check failed. if not use relay mode, please specify token and zone"
+                ));
+            }
+
             Ok(config)
+        }
+
+        #[must_use]
+        fn check_config(&self) -> bool {
+            self.is_relay_mode()
+                || (!self.token.is_empty() && !self.zones.is_empty() && !self.client.is_empty())
         }
     }
 
@@ -197,19 +215,23 @@ mod relay {
             if !value.enabled() {
                 return Ok(Default::default());
             }
-            let target = value.target();
+            let targets = value.target();
 
+            // Check clients is empty
             if value.clients().is_empty() {
                 return Err(anyhow!("Clients is empty."));
             }
 
+            // Check if disable warning
             let disable_warning = std::env::var(DISABLE_URL_WARNING)
                 .map(|s| s.parse::<i64>().unwrap_or_default() != 0)
                 .unwrap_or_default();
+
+            // Variable to store is warning has sent already
             let mut warning_sent = false;
 
             if !disable_warning {
-                for target in target {
+                for target in targets {
                     if !['=', '/', '?'].iter().any(|x| target.ends_with(*x)) {
                         warn!("{:?} is not ends with `=`, `/` or `?`", target);
                         warning_sent = true;
@@ -224,6 +246,7 @@ mod relay {
             }
 
             let mut m = HashMap::new();
+            // Insert client map
             for client in value.clients() {
                 m.insert(client.uuid().to_string(), client.target().to_string());
             }
