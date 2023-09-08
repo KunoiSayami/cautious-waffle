@@ -1,14 +1,15 @@
 use crate::cloudflare::ApiRequest;
 use crate::datastructures::Config;
 use crate::file_watcher::FileWatchDog;
-use crate::web::{get, post};
+use crate::web::{get, get_debug, post};
 use axum::http::StatusCode;
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use clap::{arg, command};
 use log::{debug, error, info, warn, LevelFilter};
 use serde_json::json;
 use std::hint::unreachable_unchecked;
 use std::io::Write;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower::ServiceBuilder;
@@ -34,6 +35,7 @@ async fn async_main(config_location: String, file_watchdog: bool) -> anyhow::Res
         debug!("Server is running on relay mode");
     }
 
+    let relay_flag = Arc::new(AtomicBool::new(request.is_relay()));
     let request = Arc::new(RwLock::new(request));
 
     let router = Router::new()
@@ -44,8 +46,10 @@ async fn async_main(config_location: String, file_watchdog: bool) -> anyhow::Res
                 Json(json!({ "version": env!("CARGO_PKG_VERSION"), "status": 200 }))
             }),
         )
+        .route("/query", axum::routing::get(get_debug))
         .fallback(|| async { (StatusCode::FORBIDDEN, "403 Forbidden") })
         .with_state(request.clone())
+        .layer(Extension(relay_flag.clone()))
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()));
 
     let server_handler = axum_server::Handle::new();
@@ -56,7 +60,7 @@ async fn async_main(config_location: String, file_watchdog: bool) -> anyhow::Res
     );
 
     let file_watcher_handler = if file_watchdog {
-        Some(FileWatchDog::start(config_location, request))
+        Some(FileWatchDog::start(config_location, request, relay_flag))
     } else {
         None
     };

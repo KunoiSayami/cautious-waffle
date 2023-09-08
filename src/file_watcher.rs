@@ -4,6 +4,7 @@ mod v1 {
     use log::{debug, error, info, warn};
     use notify::{Event, RecursiveMode, Watcher};
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::thread::JoinHandle;
     use std::time::Duration;
@@ -13,11 +14,20 @@ mod v1 {
     struct DataToUpdate {
         path: String,
         data: Arc<RwLock<ApiRequest>>,
+        relay_flag: Arc<AtomicBool>,
     }
 
     impl DataToUpdate {
-        pub fn new(path: String, data: Arc<RwLock<ApiRequest>>) -> Self {
-            Self { path, data }
+        pub fn new(
+            path: String,
+            data: Arc<RwLock<ApiRequest>>,
+            relay_flag: Arc<AtomicBool>,
+        ) -> Self {
+            Self {
+                path,
+                data,
+                relay_flag,
+            }
         }
 
         pub async fn update(&self) -> Option<()> {
@@ -40,6 +50,7 @@ mod v1 {
                 debug!("Server is running on relay mode");
             }
             *data = new_data;
+            self.relay_flag.store(relay, Ordering::Release);
             info!("Reload configure file successful, {}", data.info());
             Some(())
         }
@@ -56,10 +67,11 @@ mod v1 {
             file: String,
             stop_signal_channel: oneshot::Receiver<bool>,
             data: Arc<RwLock<ApiRequest>>,
+            relay_flag: Arc<AtomicBool>,
         ) -> Option<()> {
             let path = PathBuf::from(file.clone());
 
-            let data = DataToUpdate::new(file, data);
+            let data = DataToUpdate::new(file, data, relay_flag);
 
             let mut watcher = notify::recommended_watcher(move |res| match res {
                 Ok(event) => {
@@ -117,10 +129,16 @@ mod v1 {
             event.need_rescan()
         }
 
-        pub fn start(path: String, data: Arc<RwLock<ApiRequest>>) -> Self {
+        pub fn start(
+            path: String,
+            data: Arc<RwLock<ApiRequest>>,
+            relay_flag: Arc<AtomicBool>,
+        ) -> Self {
             let (stop_signal_channel, receiver) = oneshot::channel();
             Self {
-                handler: std::thread::spawn(|| Self::file_watching(path, receiver, data)),
+                handler: std::thread::spawn(|| {
+                    Self::file_watching(path, receiver, data, relay_flag)
+                }),
                 stop_signal_channel,
             }
         }

@@ -4,10 +4,11 @@ pub mod v1 {
     use axum::extract::{Path, State};
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
-    use axum::Json;
+    use axum::{Extension, Json};
     use headers::HeaderMap;
-    use log::info;
+    use log::{info, warn};
     use std::str::FromStr;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
@@ -23,8 +24,37 @@ pub mod v1 {
         Path(id): Path<String>,
         headers: HeaderMap,
         State(api): State<Arc<RwLock<ApiRequest>>>,
+        Extension(relay_status): Extension<Arc<AtomicBool>>,
     ) -> impl IntoResponse {
-        staff(id, None, api, headers).await
+        let post_data = if relay_status.load(Ordering::Relaxed) {
+            let api = api.read().await;
+            headers
+                .get(api.column())
+                .map(|ip| {
+                    ip.to_str()
+                        .map_err(|e| warn!("Convert header value error: {:?}", e))
+                        .ok()
+                })
+                .flatten()
+                .map(|ip| PostData::new(ip.to_string()))
+        } else {
+            None
+        };
+
+        staff(id, post_data, api, headers).await
+    }
+
+    pub async fn get_debug(mut headers: HeaderMap) -> impl IntoResponse {
+        let mut map = serde_json::Map::new();
+        for header in headers.drain() {
+            if let Some(name) = header.0 {
+                map.insert(
+                    name.to_string(),
+                    serde_json::Value::from(header.1.to_str().ok()),
+                );
+            }
+        }
+        Json(map)
     }
 
     // To use this post function
@@ -94,5 +124,5 @@ pub mod v1 {
     }
 }
 
-pub use current::{get, post};
+pub use current::{get, get_debug, post};
 pub use v1 as current;
