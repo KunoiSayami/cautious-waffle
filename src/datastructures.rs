@@ -145,12 +145,24 @@ mod config {
             self.is_relay_mode()
                 || (!self.token.is_empty() && !self.zones.is_empty() && !self.client.is_empty())
         }
+
+        pub fn enable_query(&self) -> bool {
+            self.server.enable_query()
+        }
     }
 
     #[derive(Clone, Debug, Deserialize)]
     pub struct Server {
         host: String,
         port: u16,
+        #[serde(default)]
+        enable_query: bool,
+    }
+
+    impl Server {
+        pub fn enable_query(&self) -> bool {
+            self.enable_query
+        }
     }
 
     impl std::fmt::Display for Server {

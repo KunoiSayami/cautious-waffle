@@ -34,6 +34,8 @@ async fn async_main(
     info!("Version: {}", env!("CARGO_PKG_VERSION"));
     debug!("Server bind to {}", &bind);
 
+    let query_enabled = query_enabled || config.enable_query();
+
     let request = ApiRequest::try_from(config)?;
 
     if request.is_relay() {
@@ -57,6 +59,12 @@ async fn async_main(
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()));
 
     let router = if query_enabled {
+        if !std::env::var("DISABLE_QUERY_WARNING")
+            .map(|v| v.eq("1"))
+            .unwrap_or_default()
+        {
+            warn!("Route query is enabled, it may cause some security issue. Set DISABLE_QUERY_WARNING=1 to disable this warning.");
+        }
         router.route("/query", axum::routing::get(get_debug))
     } else {
         router
