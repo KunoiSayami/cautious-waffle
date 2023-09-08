@@ -55,7 +55,11 @@ pub mod v1 {
                 );
             }
         }
-        Json(map)
+
+        (
+            [("content-type", "application/json")],
+            serde_json::to_string_pretty(&map).unwrap(),
+        )
     }
 
     // To use this post function

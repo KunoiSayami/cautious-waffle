@@ -23,7 +23,11 @@ mod web;
 
 const DEFAULT_CONFIG_LOCATION: &str = "config.toml";
 
-async fn async_main(config_location: String, file_watchdog: bool) -> anyhow::Result<()> {
+async fn async_main(
+    config_location: String,
+    file_watchdog: bool,
+    query_enabled: bool,
+) -> anyhow::Result<()> {
     let config = Config::try_from_file(&config_location).await?;
 
     let bind = config.get_bind();
@@ -47,11 +51,16 @@ async fn async_main(config_location: String, file_watchdog: bool) -> anyhow::Res
                 Json(json!({ "version": env!("CARGO_PKG_VERSION"), "status": 200 }))
             }),
         )
-        .route("/query", axum::routing::get(get_debug))
         .fallback(|| async { (StatusCode::FORBIDDEN, "403 Forbidden") })
         .with_state(request.clone())
         .layer(Extension(relay_flag.clone()))
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()));
+
+    let router = if query_enabled {
+        router.route("/query", axum::routing::get(get_debug))
+    } else {
+        router
+    };
 
     let server_handler = axum_server::Handle::new();
     let server = tokio::spawn(
@@ -104,6 +113,7 @@ fn main() -> anyhow::Result<()> {
                 .default_value(DEFAULT_CONFIG_LOCATION),
             arg!(--systemd "Disable log output in systemd"),
             arg!(--"disable-watcher" "Disable configuration file watcher"),
+            arg!(--"enable-query" "Enable query response"),
         ])
         .get_matches();
 
@@ -128,5 +138,6 @@ fn main() -> anyhow::Result<()> {
                 .map(|s: &String| s.to_string())
                 .unwrap(),
             !matches.get_flag("disable-watcher"),
+            matches.get_flag("enable-query"),
         ))
 }
