@@ -8,6 +8,7 @@ mod v1 {
     use std::sync::Arc;
     use std::thread::JoinHandle;
     use std::time::Duration;
+    use tap::TapFallible;
     use tokio::sync::RwLock;
 
     #[derive(Debug)]
@@ -33,13 +34,13 @@ mod v1 {
         pub async fn update(&self) -> Option<()> {
             let config = Config::try_from_file(&self.path)
                 .await
-                .map_err(|e| error!("[Can be safely ignored] Unable to parse new file: {:?}", e))
+                .tap_err(|e| error!("[Can be safely ignored] Unable to parse new file: {:?}", e))
                 .ok()?;
 
             let mut data = self.data.write().await;
             let relay = data.is_relay();
             let new_data = ApiRequest::try_from(config)
-                .map_err(|e| {
+                .tap_err(|e| {
                     error!(
                         "[Can be safely ignored] Unable parse configure to inner type {:?}",
                         e
@@ -50,7 +51,7 @@ mod v1 {
                 debug!("Server is running on relay mode");
             }
             *data = new_data;
-            self.relay_flag.store(relay, Ordering::Release);
+            self.relay_flag.store(relay, Ordering::Relaxed);
             info!("Reload configure file successful, {}", data.info());
             Some(())
         }
@@ -79,7 +80,7 @@ mod v1 {
                         tokio::runtime::Builder::new_current_thread()
                             .build()
                             .map(|runtime| runtime.block_on(data.update()))
-                            .map_err(|e| {
+                            .tap_err(|e| {
                                 error!("[Can be safely ignored] Unable create runtime: {:?}", e)
                             })
                             .ok();
@@ -92,17 +93,17 @@ mod v1 {
                     )
                 }
             })
-            .map_err(|e| error!("[Can be safely ignored] Can't start watcher {:?}", e))
+            .tap_err(|e| error!("[Can be safely ignored] Can't start watcher {:?}", e))
             .ok()?;
 
             watcher
                 .watch(&path, RecursiveMode::NonRecursive)
-                .map_err(|e| error!("[Can be safely ignored] Unable to watch file: {:?}", e))
+                .tap_err(|e| error!("[Can be safely ignored] Unable to watch file: {:?}", e))
                 .ok()?;
 
             stop_signal_channel
                 .recv()
-                .map_err(|e| {
+                .tap_err(|e| {
                     error!(
                         "[Can be safely ignored] Got error while poll oneshot event: {:?}",
                         e
@@ -112,7 +113,7 @@ mod v1 {
 
             watcher
                 .unwatch(&path)
-                .map_err(|e| error!("[Can be safely ignored] Unable to unwatch file: {:?}", e))
+                .tap_err(|e| error!("[Can be safely ignored] Unable to unwatch file: {:?}", e))
                 .ok()?;
 
             debug!("File watcher exited!");
@@ -147,7 +148,7 @@ mod v1 {
             if !self.handler.is_finished() {
                 self.stop_signal_channel
                     .send(true)
-                    .map_err(|e| {
+                    .tap_err(|e| {
                         error!(
                 "[Can be safely ignored] Unable send terminate signal to file watcher thread: {:?}",
                 e

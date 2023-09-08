@@ -29,6 +29,7 @@ mod api {
     use serde_derive::{Deserialize, Serialize};
     use std::collections::HashMap;
     use std::time::Duration;
+    use tap::TapFallible;
 
     const CLOUDFLARE_API_PREFIX: &str = "https://api.cloudflare.com/client/v4";
 
@@ -60,15 +61,19 @@ mod api {
                 .map_err(|e| anyhow!("Got error while update DNS record: {:?}", e))?;
             Ok(resp.status().is_success())
         }
+
         pub fn name(&self) -> &str {
             &self.name
         }
+
         pub fn content(&self) -> &str {
             &self.content
         }
+
         pub fn proxied(&self) -> bool {
             self.proxied
         }
+
         pub fn ttl(&self) -> i32 {
             self.ttl
         }
@@ -110,6 +115,7 @@ mod api {
                 .pop()
                 .ok_or(anyhow!("Result is empty!"))
         }
+
         pub fn set_content(&mut self, content: String) {
             self.content = content;
         }
@@ -155,9 +161,11 @@ mod api {
         pub fn success(&self) -> bool {
             self.success
         }
+
         pub fn result(self) -> serde_json::Value {
             self.result
         }
+
         pub fn errors(&self) -> &Vec<CloudFlareError> {
             &self.errors
         }
@@ -265,7 +273,7 @@ mod api {
                     .send()
                     .await
                     .map(|ret| ret.status())
-                    .map_err(|e| error!("{}", e))
+                    .tap_err(|e| error!("{}", e))
                 {
                     if status.is_success() {
                         update = true;
@@ -296,7 +304,7 @@ mod api {
                 if let Ok(mut record) =
                     DNSRecord::fetch_dns_record(&self.client, zone.zone(), zone.domain())
                         .await
-                        .map_err(|e| error!("{}", e))
+                        .tap_err(|e| error!("{}", e))
                 {
                     if !record.content().eq(&new_ip) {
                         record.set_content(new_ip.clone());
@@ -310,7 +318,7 @@ mod api {
                                 }
                                 ret
                             })
-                            .map_err(|e| {
+                            .tap_err(|e| {
                                 error!("Processing: {} {} {}", zone.domain(), zone.zone(), e)
                             })
                             .ok();

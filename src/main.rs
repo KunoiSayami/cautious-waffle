@@ -11,6 +11,7 @@ use std::hint::unreachable_unchecked;
 use std::io::Write;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use tap::TapFallible;
 use tokio::sync::RwLock;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
@@ -84,7 +85,7 @@ async fn async_main(config_location: String, file_watchdog: bool) -> anyhow::Res
     if file_watchdog {
         tokio::task::spawn_blocking(|| file_watcher_handler.unwrap().stop())
             .await
-            .map_err(|e| {
+            .tap_err(|e| {
                 error!(
                     "[Can be safely ignored] Unable to spawn stop file watcher thread {:?}",
                     e
