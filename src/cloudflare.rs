@@ -33,7 +33,7 @@ mod api {
 
     const CLOUDFLARE_API_PREFIX: &str = "https://api.cloudflare.com/client/v4";
 
-    pub const DEFAULT_COLUMN: &'static str = "X-Real-IP";
+    pub const DEFAULT_COLUMN: &str = "X-Real-IP";
 
     #[derive(Clone, Debug, Deserialize)]
     pub struct DNSRecord {
@@ -58,7 +58,7 @@ mod api {
                 .json(&PutDNSRecord::from(self))
                 .send()
                 .await
-                .map_err(|e| anyhow!("Got error while update DNS record: {:?}", e))?;
+                .map_err(|e| anyhow!("Got error while update DNS record: {e:?}"))?;
             Ok(resp.status().is_success())
         }
 
@@ -84,10 +84,7 @@ mod api {
             name: &str,
         ) -> anyhow::Result<Self> {
             let resp = client
-                .get(format!(
-                    "{}/zones/{}/dns_records",
-                    CLOUDFLARE_API_PREFIX, zone
-                ))
+                .get(format!("{CLOUDFLARE_API_PREFIX}/zones/{zone}/dns_records",))
                 .query(
                     &[("type", "A"), ("name", name)]
                         .iter()
@@ -96,14 +93,14 @@ mod api {
                 )
                 .send()
                 .await
-                .map_err(|e| anyhow!("Got error while query DNS records: {:?}", e))?;
+                .map_err(|e| anyhow!("Got error while query DNS records: {e:?}"))?;
             if !resp.status().is_success() {
                 return Err(anyhow!("Api request is unsuccessful: {:?}", resp));
             }
             let resp: CloudFlareResult = resp
                 .json()
                 .await
-                .map_err(|e| anyhow!("Got error while serialize DNS records: {:?}", e))?;
+                .map_err(|e| anyhow!("Got error while serialize DNS records: {e:?}"))?;
             if !resp.success() {
                 return Err(anyhow!(
                     "Got error in cloudflare dns api request: {:?}",
@@ -111,7 +108,7 @@ mod api {
                 ));
             }
             serde_json::from_value::<Vec<_>>(resp.result())
-                .map_err(|e| anyhow!("Got error while serialize DNS result: {:?}", e))?
+                .map_err(|e| anyhow!("Got error while serialize DNS result: {e:?}"))?
                 .pop()
                 .ok_or(anyhow!("Result is empty!"))
         }
@@ -189,7 +186,7 @@ mod api {
             let client = if let Some(proxy) = value.proxy() {
                 client.proxy(
                     reqwest::Proxy::all(proxy)
-                        .map_err(|e| anyhow!("Parse proxy scheme error: {:?}", e))?,
+                        .map_err(|e| anyhow!("Parse proxy scheme error: {e:?}"))?,
                 )
             } else {
                 client
@@ -273,13 +270,13 @@ mod api {
                     .send()
                     .await
                     .map(|ret| ret.status())
-                    .tap_err(|e| error!("{}", e))
+                    .tap_err(|e| error!("{e}"))
                 {
                     if status.is_success() {
                         update = true;
                         break;
                     }
-                    error!("Post to {} unsuccessful: {:?}", upstream, status)
+                    error!("Post to {upstream} unsuccessful: {status:?}")
                 }
             }
             Ok(update)
@@ -293,7 +290,7 @@ mod api {
                     .get(uuid)
                     .ok_or_else(ApiError::forbidden)?;
 
-                return self.process_relay(&uuid, new_ip).await;
+                return self.process_relay(uuid, new_ip).await;
             }
 
             let zones = self.mapper.get(uuid).ok_or_else(ApiError::forbidden)?;
@@ -304,7 +301,7 @@ mod api {
                 if let Ok(mut record) =
                     DNSRecord::fetch_dns_record(&self.client, zone.zone(), zone.domain())
                         .await
-                        .tap_err(|e| error!("{}", e))
+                        .tap_err(|e| error!("{e}"))
                 {
                     if !record.content().eq(&new_ip) {
                         record.set_content(new_ip.clone());
@@ -314,12 +311,12 @@ mod api {
                             .map(|ret| {
                                 if ret && !updated {
                                     updated = true;
-                                    info!("Update {} IP to {}", uuid, new_ip);
+                                    info!("Update {uuid} IP to {new_ip}");
                                 }
                                 ret
                             })
                             .tap_err(|e| {
-                                error!("Processing: {} {} {}", zone.domain(), zone.zone(), e)
+                                error!("Processing: {} {} {e}", zone.domain(), zone.zone())
                             })
                             .ok();
                     }
@@ -377,7 +374,7 @@ mod api_error {
             match self {
                 ApiError::Forbidden => (StatusCode::FORBIDDEN, "403 Forbidden\n"),
                 ApiError::Other(e) => {
-                    error!("{}", e);
+                    error!("{e}");
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "500 Internal server error\n",

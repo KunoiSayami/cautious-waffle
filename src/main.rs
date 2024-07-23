@@ -131,6 +131,15 @@ fn main() -> anyhow::Result<()> {
         .filter_module("reqwest", LevelFilter::Warn)
         .filter_module("h2", LevelFilter::Warn)
         .filter_module("hyper::proto::h1", LevelFilter::Warn);
+
+    #[cfg(not(debug_assertions))]
+    binding
+        .filter_module("hyper::client::pool", LevelFilter::Warn)
+        .filter_module("tower_http::trace::on_response", LevelFilter::Warn)
+        .filter_module("tower_http::trace::on_failure", LevelFilter::Warn)
+        .filter_module("tower_http::trace::make_span", LevelFilter::Warn)
+        .filter_module("tower_http::trace::on_request", LevelFilter::Warn);
+
     if matches.get_flag("systemd") {
         binding.format(|buf, record| writeln!(buf, "[{}] {}", record.level(), record.args()));
     }

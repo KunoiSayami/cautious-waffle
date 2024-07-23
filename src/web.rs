@@ -31,12 +31,11 @@ pub mod v1 {
             let api = api.read().await;
             headers
                 .get(api.column())
-                .map(|ip| {
+                .and_then(|ip| {
                     ip.to_str()
-                        .tap_err(|e| warn!("Convert header value error: {:?}", e))
+                        .tap_err(|e| warn!("Convert header value error: {e:?}"))
                         .ok()
                 })
-                .flatten()
                 .map(|ip| PostData::new(ip.to_string()))
         } else {
             None
@@ -88,14 +87,10 @@ pub mod v1 {
         let api = api.read().await;
 
         // Get header IP (if empty maybe that's post)
-        let header_ip = if let Some(ip) = headers
+        let header_ip = headers
             .get(api.column())
             .map(|v| v.to_str().unwrap_or_default().to_string())
-        {
-            ip
-        } else {
-            String::new()
-        };
+            .unwrap_or_default();
 
         // Check is ip from post
         let ret = match data {
@@ -112,13 +107,13 @@ pub mod v1 {
             Ok(ret) => {
                 if ret {
                     if !header_ip.is_empty() && data.is_none() {
-                        info!("{} IP updated (via {})", id, header_ip);
+                        info!("{id} IP updated (via {header_ip})");
                     } else {
-                        info!("{} IP updated", id);
+                        info!("{id} IP updated");
                     }
                 }
                 // Check is relay and is success
-                if !(api.is_relay() && !ret) {
+                if !api.is_relay() || ret {
                     OK
                 } else {
                     SERVICE_UNAVAILABLE

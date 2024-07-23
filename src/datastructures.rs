@@ -113,7 +113,7 @@ mod config {
         }
 
         pub fn is_relay_mode(&self) -> bool {
-            return self.relay.enabled();
+            self.relay.enabled()
         }
 
         pub fn relay(self) -> Relay {
@@ -129,7 +129,7 @@ mod config {
                     .await
                     .map_err(|e| anyhow!("Unable read {:?}: {:?}", &location, e))?,
             )
-            .map_err(|e| anyhow!("Unable serialize configure toml: {:?}", e))?;
+            .map_err(|e| anyhow!("Unable serialize configure toml: {e:?}"))?;
 
             if !config.check_config() {
                 return Err(anyhow!(
