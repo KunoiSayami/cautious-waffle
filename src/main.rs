@@ -13,7 +13,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tap::TapFallible;
 use tokio::sync::RwLock;
-use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 
 mod cloudflare;
@@ -56,7 +55,7 @@ async fn async_main(
         .fallback(|| async { (StatusCode::FORBIDDEN, "403 Forbidden") })
         .with_state(request.clone())
         .layer(Extension(relay_flag.clone()))
-        .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()));
+        .layer(TraceLayer::new_for_http());
 
     let router = if query_enabled {
         if !std::env::var("DISABLE_QUERY_WARNING")

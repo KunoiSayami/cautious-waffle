@@ -5,20 +5,20 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
-axum = { version = "0.6.4", features = ["headers", "json"] }
-#axum-macros = "0.3.7"
-axum-server = "0.5"
+axum = { version = "0.8", features = ["json"] }
+#axum-macros = "0.5"
+axum-server = "0.7"
 clap = { version = "4.0", features = ["cargo"] }
-env_logger = "0.10"
-headers = "0.3.8"
-hyper = { version = "0.14.20", features = ["http2"] }
+env_logger = "0.11"
+headers = "0.4"
+hyper = { version = "1.6", features = ["http2"] }
 log = { version = "0.4", features = [
     "release_max_level_debug",
     "max_level_debug",
 ] }
-notify = "^6.0"
+notify = "^8.0"
 oneshot = "0.1.5"
-reqwest = { version = "^0.11", default-features = false, features = [
+reqwest = { version = "^0.12", default-features = false, features = [
     "rustls-tls-native-roots",
     "socks",
     "json",
@@ -28,7 +28,7 @@ serde_derive = "1"
 serde_json = "1"
 tap = "1.0.1"
 tokio = { version = "1", features = ["full"] }
-toml = "0.7.2"
-tower = "0.4.13"
-tower-http = { version = "0.4.0", features = ["trace"] }
+toml = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace"] }
 uuid = "1"
