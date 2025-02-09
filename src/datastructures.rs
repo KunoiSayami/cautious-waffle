@@ -127,7 +127,7 @@ mod config {
             let config: Self = toml::from_str(
                 &tokio::fs::read_to_string(&location)
                     .await
-                    .map_err(|e| anyhow!("Unable read {:?}: {:?}", &location, e))?,
+                    .map_err(|e| anyhow!("Unable read {location:?}: {e:?}"))?,
             )
             .map_err(|e| anyhow!("Unable serialize configure toml: {e:?}"))?;
 
@@ -245,15 +245,12 @@ mod relay {
             if !disable_warning {
                 for target in targets {
                     if !['=', '/', '?'].iter().any(|x| target.ends_with(*x)) {
-                        warn!("{:?} is not ends with `=`, `/` or `?`", target);
+                        warn!("{target:?} is not ends with `=`, `/` or `?`");
                         warning_sent = true;
                     }
                 }
                 if warning_sent {
-                    warn!(
-                        "You can disable this warning by set `{}` environment variable to `1`",
-                        DISABLE_URL_WARNING
-                    );
+                    warn!("You can disable this warning by set `{DISABLE_URL_WARNING}` environment variable to `1`");
                 }
             }
 

@@ -11,7 +11,6 @@ use std::hint::unreachable_unchecked;
 use std::io::Write;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use tap::TapFallible;
 use tokio::sync::RwLock;
 use tower_http::trace::TraceLayer;
 
@@ -31,7 +30,7 @@ async fn async_main(
 
     let bind = config.get_bind();
     info!("Version: {}", env!("CARGO_PKG_VERSION"));
-    debug!("Server bind to {}", &bind);
+    debug!("Server bind to {bind}");
 
     let query_enabled = query_enabled || config.enable_query();
 
@@ -45,7 +44,7 @@ async fn async_main(
     let request = Arc::new(RwLock::new(request));
 
     let router = Router::new()
-        .route("/:sub_id", axum::routing::get(get).post(post))
+        .route("/{sub_id}", axum::routing::get(get).post(post))
         .route(
             "/",
             axum::routing::get(|| async {
@@ -101,7 +100,7 @@ async fn async_main(
     if file_watchdog {
         tokio::task::spawn_blocking(|| file_watcher_handler.unwrap().stop())
             .await
-            .tap_err(|e| {
+            .inspect_err(|e| {
                 error!(
                     "[Can be safely ignored] Unable to spawn stop file watcher thread {:?}",
                     e

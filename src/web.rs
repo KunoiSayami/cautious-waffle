@@ -10,7 +10,6 @@ pub mod v1 {
     use std::str::FromStr;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
-    use tap::TapFallible;
     use tokio::sync::RwLock;
 
     const BAD_REQUEST: (StatusCode, &str) = (StatusCode::BAD_REQUEST, "400 Bad request\n");
@@ -33,7 +32,7 @@ pub mod v1 {
                 .get(api.column())
                 .and_then(|ip| {
                     ip.to_str()
-                        .tap_err(|e| warn!("Convert header value error: {e:?}"))
+                        .inspect_err(|e| warn!("Convert header value error: {e:?}"))
                         .ok()
                 })
                 .map(|ip| PostData::new(ip.to_string()))

@@ -29,7 +29,6 @@ mod api {
     use serde_derive::{Deserialize, Serialize};
     use std::collections::HashMap;
     use std::time::Duration;
-    use tap::TapFallible;
 
     const CLOUDFLARE_API_PREFIX: &str = "https://api.cloudflare.com/client/v4";
 
@@ -99,7 +98,7 @@ mod api {
                 .await
                 .map_err(|e| anyhow!("Got error while query DNS records: {e:?}"))?;
             if !resp.status().is_success() {
-                return Err(anyhow!("Api request is unsuccessful: {:?}", resp));
+                return Err(anyhow!("Api request is unsuccessful: {resp:?}"));
             }
             let resp: CloudFlareResult = resp
                 .json()
@@ -275,7 +274,7 @@ mod api {
                     .send()
                     .await
                     .map(|ret| ret.status())
-                    .tap_err(|e| error!("{e}"))
+                    .inspect_err(|e| error!("{e}"))
                 {
                     if status.is_success() {
                         update = true;
@@ -306,7 +305,7 @@ mod api {
                 if let Ok(mut record) =
                     DNSRecord::fetch_dns_record(&self.client, zone.zone(), zone.domain())
                         .await
-                        .tap_err(|e| error!("{e}"))
+                        .inspect_err(|e| error!("{e}"))
                 {
                     if !record.content().eq(&new_ip) {
                         record.set_content(new_ip.clone());
@@ -320,7 +319,7 @@ mod api {
                                 }
                                 ret
                             })
-                            .tap_err(|e| {
+                            .inspect_err(|e| {
                                 error!("Processing: {} {} {e}", zone.domain(), zone.zone())
                             })
                             .ok();
