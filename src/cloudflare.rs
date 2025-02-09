@@ -38,7 +38,7 @@ mod api {
     #[derive(Clone, Debug, Deserialize)]
     pub struct DNSRecord {
         id: String,
-        zone_id: String,
+        //zone_id: String,
         name: String,
         content: String,
         proxied: bool,
@@ -46,12 +46,16 @@ mod api {
     }
 
     impl DNSRecord {
-        async fn update_ns_record(&self, session: &reqwest::Client) -> anyhow::Result<bool> {
+        async fn update_ns_record(
+            &self,
+            zone_id: &str,
+            session: &reqwest::Client,
+        ) -> anyhow::Result<bool> {
             let resp = session
                 .put(
                     format!(
                         "{}/zones/{}/dns_records/{}",
-                        CLOUDFLARE_API_PREFIX, &self.zone_id, &self.id
+                        CLOUDFLARE_API_PREFIX, zone_id, &self.id
                     )
                     .as_str(),
                 )
@@ -101,6 +105,7 @@ mod api {
                 .json()
                 .await
                 .map_err(|e| anyhow!("Got error while serialize DNS records: {e:?}"))?;
+            //log::debug!("resp => {:?}", resp);
             if !resp.success() {
                 return Err(anyhow!(
                     "Got error in cloudflare dns api request: {:?}",
@@ -306,7 +311,7 @@ mod api {
                     if !record.content().eq(&new_ip) {
                         record.set_content(new_ip.clone());
                         record
-                            .update_ns_record(&self.client)
+                            .update_ns_record(zone.zone(), &self.client)
                             .await
                             .map(|ret| {
                                 if ret && !updated {

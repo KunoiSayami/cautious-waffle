@@ -1,6 +1,6 @@
 [package]
 name = "cautious-waffle"
-version = "0.5.4"
+version = "0.6.0"
 edition = "2021"
 
 [dependencies]
@@ -12,10 +12,17 @@ clap = { version = "4.0", features = ["cargo"] }
 env_logger = "0.10"
 headers = "0.3.8"
 hyper = { version = "0.14.20", features = ["http2"] }
-log = { version = "0.4", features = ["release_max_level_debug", "max_level_debug"] }
+log = { version = "0.4", features = [
+    "release_max_level_debug",
+    "max_level_debug",
+] }
 notify = "^6.0"
 oneshot = "0.1.5"
-reqwest = { version = "^0.11", default-features = false, features = ["rustls-tls-native-roots", "socks", "json"] }
+reqwest = { version = "^0.11", default-features = false, features = [
+    "rustls-tls-native-roots",
+    "socks",
+    "json",
+] }
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
