@@ -72,7 +72,7 @@ async fn async_main(
         router
     };
 
-    let server_handler = axum_server::Handle::new();
+    let server_handler = axum_server::Handle::<std::net::SocketAddr>::new();
     let server = tokio::spawn(
         axum_server::bind(bind.parse().unwrap())
             .handle(server_handler.clone())
