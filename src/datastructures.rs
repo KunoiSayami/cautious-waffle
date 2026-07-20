@@ -1,7 +1,7 @@
 mod config {
     use anyhow::anyhow;
     use serde_derive::Deserialize;
-    use std::fmt::Formatter;
+    use std::net::{IpAddr, SocketAddr};
 
     #[derive(Clone, Debug, Deserialize)]
     pub struct ZoneMapper {
@@ -104,8 +104,8 @@ mod config {
             &self.token
         }
 
-        pub fn get_bind(&self) -> String {
-            self.server.to_string()
+        pub fn get_bind(&self) -> anyhow::Result<Vec<SocketAddr>> {
+            self.server.bind_addresses()
         }
 
         pub fn zones(&self) -> &Vec<ZoneMapper> {
@@ -151,9 +151,28 @@ mod config {
         }
     }
 
+    /// One or more listen addresses.
+    ///
+    /// Accepts `host = "::"` (a single address) or `host = ["0.0.0.0", "::"]`.
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(untagged)]
+    pub enum Host {
+        Single(String),
+        Multiple(Vec<String>),
+    }
+
+    impl Host {
+        fn iter(&self) -> impl Iterator<Item = &String> {
+            match self {
+                Self::Single(host) => std::slice::from_ref(host).iter(),
+                Self::Multiple(hosts) => hosts.iter(),
+            }
+        }
+    }
+
     #[derive(Clone, Debug, Deserialize)]
     pub struct Server {
-        host: String,
+        host: Host,
         port: u16,
         #[serde(default)]
         enable_query: bool,
@@ -163,11 +182,30 @@ mod config {
         pub fn enable_query(&self) -> bool {
             self.enable_query
         }
-    }
 
-    impl std::fmt::Display for Server {
-        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}:{}", self.host, self.port)
+        /// Resolve every configured host into a socket address.
+        ///
+        /// IPv6 hosts may be written with or without brackets, so `::`,
+        /// `[::]` and `::1` are all accepted.
+        pub fn bind_addresses(&self) -> anyhow::Result<Vec<SocketAddr>> {
+            let mut addresses = Vec::new();
+            for host in self.host.iter() {
+                let stripped = host
+                    .strip_prefix('[')
+                    .and_then(|host| host.strip_suffix(']'))
+                    .unwrap_or(host);
+                let ip: IpAddr = stripped
+                    .parse()
+                    .map_err(|e| anyhow!("Unable to parse listen address {host:?}: {e:?}"))?;
+                let address = SocketAddr::new(ip, self.port);
+                if !addresses.contains(&address) {
+                    addresses.push(address);
+                }
+            }
+            if addresses.is_empty() {
+                return Err(anyhow!("No listen address configured"));
+            }
+            Ok(addresses)
         }
     }
 }
@@ -250,7 +288,9 @@ mod relay {
                     }
                 }
                 if warning_sent {
-                    warn!("You can disable this warning by set `{DISABLE_URL_WARNING}` environment variable to `1`");
+                    warn!(
+                        "You can disable this warning by set `{DISABLE_URL_WARNING}` environment variable to `1`"
+                    );
                 }
             }
 

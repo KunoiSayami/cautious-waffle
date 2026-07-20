@@ -13,6 +13,7 @@ the Cloudflare API token.
 ## Features
 
 - Updates Cloudflare `A` records via the v4 API
+- Listens on any number of addresses, so IPv4 and IPv6 can be served together
 - One UUID may map to multiple hostnames across multiple zones
 - Automatic zone resolution by matching the longest domain suffix
 - Takes the IP from a request header (`X-Real-IP` by default) or from a JSON body
@@ -41,7 +42,7 @@ token = "CF_TOKEN"       # Cloudflare API token, needs DNS edit rights on the zo
 column_ip = "X-Real-IP"  # optional, header carrying the client IP (default: X-Real-IP)
 
 [server]
-host = "127.0.0.1"
+host = "127.0.0.1"       # one address, or several: ["127.0.0.1", "::1"]
 port = 21336
 enable_query = false     # optional, see "Query endpoint" below
 
@@ -99,6 +100,22 @@ cautious-waffle --config config.toml
 | `--systemd` | Plain log format, without timestamps, for journald |
 
 Log level follows `env_logger`, so use `RUST_LOG=debug` for verbose output.
+
+## Listen addresses
+
+To accept updates over both stacks, give `host` a list:
+
+```toml
+[server]
+host = ["0.0.0.0", "::"]
+port = 21336
+```
+
+Each address gets its own listener sharing one router, and `Ctrl-C` shuts all of them
+down together. IPv6 addresses may be written with or without brackets (`::1` or `[::1]`).
+Note that on most Linux systems `::` alone already accepts IPv4 connections via
+`net.ipv6.bindv6only=0`, in which case listing `0.0.0.0` as well will fail with "address
+already in use".
 
 ## API
 

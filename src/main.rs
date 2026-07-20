@@ -5,12 +5,12 @@ use crate::web::{get, get_debug, post};
 use axum::http::StatusCode;
 use axum::{Extension, Json, Router};
 use clap::{arg, command};
-use log::{debug, error, info, warn, LevelFilter};
+use log::{LevelFilter, debug, error, info, warn};
 use serde_json::json;
 use std::hint::unreachable_unchecked;
 use std::io::Write;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use tokio::sync::RwLock;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
@@ -29,9 +29,15 @@ async fn async_main(
 ) -> anyhow::Result<()> {
     let config = Config::try_from_file(&config_location).await?;
 
-    let bind = config.get_bind();
+    let bind = config.get_bind()?;
     info!("Version: {}", env!("CARGO_PKG_VERSION"));
-    debug!("Server bind to {bind}");
+    debug!(
+        "Server bind to {}",
+        bind.iter()
+            .map(|address| address.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
 
     let query_enabled = query_enabled || config.enable_query();
 
@@ -65,19 +71,42 @@ async fn async_main(
             .map(|v| v.eq("1"))
             .unwrap_or_default()
         {
-            warn!("Route query is enabled, it may cause some security issue. Set DISABLE_QUERY_WARNING=1 to disable this warning.");
+            warn!(
+                "Route query is enabled, it may cause some security issue. Set DISABLE_QUERY_WARNING=1 to disable this warning."
+            );
         }
         router.route("/query", axum::routing::get(get_debug))
     } else {
         router
     };
 
+    // Bind every socket before serving any of them, so a failure names the
+    // offending address instead of surfacing as a bare "address already in
+    // use" from somewhere inside a spawned task.
+    let mut listeners = Vec::with_capacity(bind.len());
+    for address in bind {
+        let listener = std::net::TcpListener::bind(address)
+            .map_err(|e| anyhow::anyhow!("Unable to bind {address}: {e}"))?;
+        // tokio refuses to register a blocking socket.
+        listener
+            .set_nonblocking(true)
+            .map_err(|e| anyhow::anyhow!("Unable to set {address} non-blocking: {e}"))?;
+        listeners.push(listener);
+    }
+
+    // One server per listen address, all sharing a handle so a single
+    // graceful_shutdown call stops every one of them.
     let server_handler = axum_server::Handle::<std::net::SocketAddr>::new();
-    let server = tokio::spawn(
-        axum_server::bind(bind.parse().unwrap())
-            .handle(server_handler.clone())
-            .serve(router.into_make_service()),
-    );
+    let mut servers = tokio::task::JoinSet::new();
+    for listener in listeners {
+        servers.spawn(
+            axum_server::from_tcp(listener)?
+                .handle(server_handler.clone())
+                .serve(router.clone().into_make_service()),
+        );
+    }
+    // Resolves as soon as any listener exits; the rest are dropped with the set.
+    let server = async move { servers.join_next().await.unwrap() };
 
     let file_watcher_handler = if file_watchdog {
         Some(FileWatchDog::start(config_location, request, relay_flag))
