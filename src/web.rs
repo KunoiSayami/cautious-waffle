@@ -8,8 +8,8 @@ pub mod v1 {
     use headers::HeaderMap;
     use log::{info, warn};
     use std::str::FromStr;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use tokio::sync::RwLock;
 
     const BAD_REQUEST: (StatusCode, &str) = (StatusCode::BAD_REQUEST, "400 Bad request\n");

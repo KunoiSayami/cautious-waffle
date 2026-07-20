@@ -12,7 +12,7 @@ the Cloudflare API token.
 
 ## Features
 
-- Updates Cloudflare `A` records via the v4 API
+- Updates Cloudflare `A` and `AAAA` records via the v4 API, chosen by address family
 - Listens on any number of addresses, so IPv4 and IPv6 can be served together
 - One UUID may map to multiple hostnames across multiple zones
 - Automatic zone resolution by matching the longest domain suffix
@@ -101,7 +101,15 @@ cautious-waffle --config config.toml
 
 Log level follows `env_logger`, so use `RUST_LOG=debug` for verbose output.
 
-## Listen addresses
+## IPv6
+
+The record type follows the address that is submitted: an IPv4 address updates the `A`
+record, an IPv6 address updates the `AAAA` record. The two are independent, so a
+dual-stack client that sends both addresses keeps both records current, and updating one
+never disturbs the other. If the record does not exist yet it is created.
+
+An address that fails to parse is rejected with `400 Bad request` rather than being
+forwarded to Cloudflare.
 
 To accept updates over both stacks, give `host` a list:
 

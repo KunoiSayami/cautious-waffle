@@ -28,11 +28,50 @@ mod api {
     use log::{error, info};
     use serde_derive::{Deserialize, Serialize};
     use std::collections::HashMap;
+    use std::net::IpAddr;
     use std::time::Duration;
 
     const CLOUDFLARE_API_PREFIX: &str = "https://api.cloudflare.com/client/v4";
 
+    /// TTL for records this server creates; 1 means "automatic" to Cloudflare.
+    const DEFAULT_TTL: i32 = 1;
+
     pub const DEFAULT_COLUMN: &str = "X-Real-IP";
+
+    /// The DNS record type an address maps to: IPv4 to `A`, IPv6 to `AAAA`.
+    ///
+    /// The variant names are the wire values Cloudflare expects, so they keep
+    /// the DNS spelling rather than Rust's usual acronym casing.
+    #[allow(clippy::upper_case_acronyms)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+    pub enum RecordType {
+        A,
+        AAAA,
+    }
+
+    impl RecordType {
+        pub fn as_str(&self) -> &'static str {
+            match self {
+                Self::A => "A",
+                Self::AAAA => "AAAA",
+            }
+        }
+    }
+
+    impl From<IpAddr> for RecordType {
+        fn from(ip: IpAddr) -> Self {
+            match ip {
+                IpAddr::V4(_) => Self::A,
+                IpAddr::V6(_) => Self::AAAA,
+            }
+        }
+    }
+
+    impl std::fmt::Display for RecordType {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.as_str())
+        }
+    }
 
     #[derive(Clone, Debug, Deserialize)]
     pub struct DNSRecord {
@@ -49,6 +88,7 @@ mod api {
             &self,
             zone_id: &str,
             session: &reqwest::Client,
+            record_type: RecordType,
         ) -> anyhow::Result<bool> {
             let resp = session
                 .put(
@@ -58,7 +98,7 @@ mod api {
                     )
                     .as_str(),
                 )
-                .json(&PutDNSRecord::from(self))
+                .json(&PutDNSRecord::from_record(self, record_type))
                 .send()
                 .await
                 .map_err(|e| anyhow!("Got error while update DNS record: {e:?}"))?;
@@ -81,15 +121,21 @@ mod api {
             self.ttl
         }
 
+        /// Look up the record of `record_type` for `name`.
+        ///
+        /// Returns `Ok(None)` when the zone simply has no such record yet,
+        /// which is the normal case the first time a client publishes an
+        /// address of a given family.
         pub async fn fetch_dns_record(
             client: &reqwest::Client,
             zone: &str,
             name: &str,
-        ) -> anyhow::Result<Self> {
+            record_type: RecordType,
+        ) -> anyhow::Result<Option<Self>> {
             let resp = client
                 .get(format!("{CLOUDFLARE_API_PREFIX}/zones/{zone}/dns_records",))
                 .query(
-                    &[("type", "A"), ("name", name)]
+                    &[("type", record_type.as_str()), ("name", name)]
                         .iter()
                         .map(|(x, y)| (x.to_string(), y.to_string()))
                         .collect::<HashMap<String, String>>(),
@@ -111,10 +157,34 @@ mod api {
                     resp.errors()
                 ));
             }
-            serde_json::from_value::<Vec<_>>(resp.result())
+            Ok(serde_json::from_value::<Vec<_>>(resp.result())
                 .map_err(|e| anyhow!("Got error while serialize DNS result: {e:?}"))?
-                .pop()
-                .ok_or(anyhow!("Result is empty!"))
+                .pop())
+        }
+
+        /// Create a record that does not exist yet.
+        async fn create_ns_record(
+            client: &reqwest::Client,
+            zone_id: &str,
+            name: &str,
+            content: &str,
+            record_type: RecordType,
+        ) -> anyhow::Result<bool> {
+            let resp = client
+                .post(format!(
+                    "{CLOUDFLARE_API_PREFIX}/zones/{zone_id}/dns_records"
+                ))
+                .json(&PutDNSRecord {
+                    type_: record_type,
+                    name: name.to_string(),
+                    content: content.to_string(),
+                    proxied: false,
+                    ttl: DEFAULT_TTL,
+                })
+                .send()
+                .await
+                .map_err(|e| anyhow!("Got error while create DNS record: {e:?}"))?;
+            Ok(resp.status().is_success())
         }
 
         pub fn set_content(&mut self, content: String) {
@@ -125,17 +195,17 @@ mod api {
     #[derive(Clone, Debug, Serialize)]
     struct PutDNSRecord {
         #[serde(rename = "type")]
-        type_: String,
+        type_: RecordType,
         name: String,
         content: String,
         proxied: bool,
         ttl: i32,
     }
 
-    impl From<&DNSRecord> for PutDNSRecord {
-        fn from(dns_record: &DNSRecord) -> Self {
+    impl PutDNSRecord {
+        fn from_record(dns_record: &DNSRecord, record_type: RecordType) -> Self {
             Self {
-                type_: 'A'.to_string(),
+                type_: record_type,
                 name: dns_record.name().to_string(),
                 content: dns_record.content().to_string(),
                 proxied: dns_record.proxied(),
@@ -297,34 +367,69 @@ mod api {
                 return self.process_relay(uuid, new_ip).await;
             }
 
+            // The address family decides which record type to touch, so an
+            // IPv6 update leaves the client's A record alone and vice versa.
+            let ip: IpAddr = new_ip.parse().map_err(|e| {
+                ApiError::bad_request(format!("Invalid IP address {new_ip:?}: {e:?}"))
+            })?;
+            let record_type = RecordType::from(ip);
+            // Normalize so a differently-spelled but equal address (e.g. an
+            // abbreviated IPv6 form) is not seen as a change.
+            let new_ip = ip.to_string();
+
             let zones = self.mapper.get(uuid).ok_or_else(ApiError::forbidden)?;
 
             let mut updated = false;
 
             for zone in zones {
-                if let Ok(mut record) =
-                    DNSRecord::fetch_dns_record(&self.client, zone.zone(), zone.domain())
-                        .await
-                        .inspect_err(|e| error!("{e}"))
+                let record = match DNSRecord::fetch_dns_record(
+                    &self.client,
+                    zone.zone(),
+                    zone.domain(),
+                    record_type,
+                )
+                .await
+                .inspect_err(|e| error!("{e}"))
                 {
-                    if !record.content().eq(&new_ip) {
+                    Ok(record) => record,
+                    Err(_) => continue,
+                };
+
+                let ret = match record {
+                    Some(mut record) => {
+                        if record.content().eq(&new_ip) {
+                            continue;
+                        }
                         record.set_content(new_ip.clone());
                         record
-                            .update_ns_record(zone.zone(), &self.client)
+                            .update_ns_record(zone.zone(), &self.client, record_type)
                             .await
-                            .map(|ret| {
-                                if ret && !updated {
-                                    updated = true;
-                                    info!("Update {uuid} IP to {new_ip}");
-                                }
-                                ret
-                            })
-                            .inspect_err(|e| {
-                                error!("Processing: {} {} {e}", zone.domain(), zone.zone())
-                            })
-                            .ok();
+                    }
+                    None => {
+                        info!(
+                            "Creating {record_type} record for {} in {}",
+                            zone.domain(),
+                            zone.zone()
+                        );
+                        DNSRecord::create_ns_record(
+                            &self.client,
+                            zone.zone(),
+                            zone.domain(),
+                            &new_ip,
+                            record_type,
+                        )
+                        .await
                     }
                 };
+
+                ret.inspect(|ret| {
+                    if *ret && !updated {
+                        updated = true;
+                        info!("Update {uuid} {record_type} record to {new_ip}");
+                    }
+                })
+                .inspect_err(|e| error!("Processing: {} {} {e}", zone.domain(), zone.zone()))
+                .ok();
             }
 
             Ok(updated)
@@ -366,6 +471,7 @@ mod api_error {
     #[derive(Debug)]
     pub enum ApiError {
         Forbidden,
+        BadRequest(String),
         Other(anyhow::Error),
     }
 
@@ -374,9 +480,17 @@ mod api_error {
             Self::Forbidden
         }
 
+        pub fn bad_request(reason: String) -> Self {
+            Self::BadRequest(reason)
+        }
+
         pub fn into_response(self) -> (StatusCode, &'static str) {
             match self {
                 ApiError::Forbidden => (StatusCode::FORBIDDEN, "403 Forbidden\n"),
+                ApiError::BadRequest(reason) => {
+                    error!("{reason}");
+                    (StatusCode::BAD_REQUEST, "400 Bad request\n")
+                }
                 ApiError::Other(e) => {
                     error!("{e}");
                     (
@@ -397,3 +511,26 @@ mod api_error {
 
 pub use api::ApiRequest;
 pub use api_error::ApiError;
+
+#[cfg(test)]
+mod tests {
+    use super::api::RecordType;
+    use std::net::IpAddr;
+
+    #[test]
+    fn record_type_follows_address_family() {
+        let v4: IpAddr = "203.0.113.10".parse().unwrap();
+        let v6: IpAddr = "2001:db8::1".parse().unwrap();
+        assert_eq!(RecordType::from(v4), RecordType::A);
+        assert_eq!(RecordType::from(v6), RecordType::AAAA);
+    }
+
+    /// Cloudflare expects `"type": "AAAA"`, not a tagged object.
+    #[test]
+    fn record_type_serializes_as_bare_string() {
+        assert_eq!(
+            serde_json::to_string(&RecordType::AAAA).unwrap(),
+            r#""AAAA""#
+        );
+    }
+}

@@ -4,8 +4,8 @@ mod v1 {
     use log::{debug, error, info, warn};
     use notify::{Event, RecursiveMode, Watcher};
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread::JoinHandle;
     use std::time::Duration;
     use tokio::sync::RwLock;
